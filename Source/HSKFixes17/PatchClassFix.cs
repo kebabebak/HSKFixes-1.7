@@ -14,25 +14,31 @@ namespace HSKFixes17
     ///
     /// Почему нужен второй перехват. BrokenPatchFix висит на Harmony.Patch, а PatchAll туда не
     /// заходит: он идёт по типам сборки и зовёт CreateClassProcessor(type).Patch(). Так патчат
-    /// Rimatomics и Dubs Mint Menus, и у каждого нашёлся класс с тем же изъяном — __instance
+    /// Rimatomics и Dubs Mint Menus, и у обоих нашлись классы с тем же изъяном — __instance
     /// объявлен типом, которого патчимый метод не предоставляет:
     ///
-    ///     Rimatomics  Harmony_Site_ShouldRemoveMapNow.Postfix(DestroyedSettlement __instance, ...)
-    ///                 на Site.ShouldRemoveMapNow — тип скопирован из соседнего класса
-    ///                 Harmony_DestroyedSettlement_ShouldRemoveMapNow, где он верен. Падает весь
-    ///                 статический конструктор мода, то есть все его патчи.
-    ///     DubsMintMenus  Patch_InterfaceTryActivate.Prefix(MainButtonWorker __instance)
-    ///                 на MainTabsRoot.HandleLowPriorityShortcuts. Тоже уносит конструктор.
+    ///     Rimatomics     Harmony_Site_ShouldRemoveMapNow и
+    ///                    Harmony_SettlementBase_ShouldRemoveMapNow: оба Postfix берут
+    ///                    DestroyedSettlement, а патчат Site и Settlement. Тип скопирован из
+    ///                    третьего класса, Harmony_DestroyedSettlement_ShouldRemoveMapNow, где он
+    ///                    верен. Падает весь статический конструктор мода.
+    ///     DubsMintMenus  Patch_InterfaceTryActivate.Prefix берёт MainButtonWorker, а патчит
+    ///                    MainTabsRoot.HandleLowPriorityShortcuts. Тоже уносит конструктор.
     ///
     /// Как работает. Префикс на PatchClassProcessor.Patch читает приватное поле containerType —
     /// класс, который сейчас обрабатывается. Если это один из известных, мы ставим исправленный
     /// патч сами, их же Harmony-экземпляром, и возвращаем false: их регистрация не выполняется и
     /// падать нечему. Остальные классы идут обычным путём.
     ///
+    /// Сопоставление идёт по имени типа и имени сборки, а не по полному имени: у Dubs класс вложен
+    /// в HarmonyPatches, и FullName выглядит как DubsMintMenus.HarmonyPatches+Patch_InterfaceTryActivate,
+    /// тогда как Harmony в сообщении об ошибке печатает его без обрамляющего класса. На этом я один
+    /// раз уже промахнулся — запись не срабатывала молча.
+    ///
     /// Замены повторяют логику оригиналов. У Dubs __instance не используется вовсе, поэтому
     /// вызывается их же метод с null на этом месте — логика остаётся их целиком. У Rimatomics
-    /// __instance нужен (из него берут Map), но в сигнатуре достаточно MapParent, от которого Site
-    /// и происходит, так что тело воспроизведено: если на карте есть удар ICBM, карту не удалять.
+    /// __instance нужен, но только ради Map, а для этого довольно MapParent, от которого происходят
+    /// и Site, и Settlement; тело воспроизведено: пока на карте есть удар ICBM, карту не удалять.
     /// </summary>
     public static class PatchClassFix
     {
@@ -42,6 +48,33 @@ namespace HSKFixes17
         private static FieldInfo harmonyField;
         private static MethodInfo dubsPrefix;
         private static FieldInfo icbmStrike;
+
+        /// <summary>Класс патчей, который мы ставим за мод сами.</summary>
+        private sealed class Entry
+        {
+            public string Assembly;
+            public string TypeName;
+            public Func<Harmony, bool> Apply;
+        }
+
+        private static readonly Entry[] Entries =
+        {
+            new Entry
+            {
+                Assembly = "Rimatomics", TypeName = "Harmony_Site_ShouldRemoveMapNow",
+                Apply = h => KeepMapPatch(h, typeof(Site), "Rimatomics.Harmony_Site_ShouldRemoveMapNow"),
+            },
+            new Entry
+            {
+                Assembly = "Rimatomics", TypeName = "Harmony_SettlementBase_ShouldRemoveMapNow",
+                Apply = h => KeepMapPatch(h, typeof(Settlement), "Rimatomics.Harmony_SettlementBase_ShouldRemoveMapNow"),
+            },
+            new Entry
+            {
+                Assembly = "DubsMintMenus", TypeName = "Patch_InterfaceTryActivate",
+                Apply = FixMintMenusShortcut,
+            },
+        };
 
         public static void Install()
         {
@@ -62,16 +95,16 @@ namespace HSKFixes17
 
         /// <summary>
         /// Выполняется на каждом патч-классе в игре, поэтому сперва самая дешёвая проверка —
-        /// имя типа.
+        /// простое имя типа.
         /// </summary>
         private static bool ReplaceKnownBrokenClass(PatchClassProcessor __instance,
             ref List<MethodInfo> __result)
         {
-            string name;
+            Type container;
             Harmony harmony;
             try
             {
-                name = (containerTypeField.GetValue(__instance) as Type)?.FullName;
+                container = containerTypeField.GetValue(__instance) as Type;
                 harmony = harmonyField.GetValue(__instance) as Harmony;
             }
             catch (Exception)
@@ -79,48 +112,50 @@ namespace HSKFixes17
                 return true;
             }
 
-            if (name == null || harmony == null)
+            if (container == null || harmony == null)
                 return true;
 
-            bool handled;
-            switch (name)
+            for (int i = 0; i < Entries.Length; i++)
             {
-                case "Rimatomics.HarmonyPatches+Harmony_Site_ShouldRemoveMapNow":
-                    handled = FixRimatomicsSite(harmony);
-                    break;
-                case "DubsMintMenus.Patch_InterfaceTryActivate":
-                    handled = FixMintMenusShortcut(harmony);
-                    break;
-                default:
+                Entry entry = Entries[i];
+                if (container.Name != entry.TypeName)
+                    continue;
+                if (container.Assembly.GetName().Name != entry.Assembly)
+                    continue;
+                if (!entry.Apply(harmony))
                     return true;
+
+                __result = new List<MethodInfo>();
+                return false;
             }
-
-            if (!handled)
-                return true;
-
-            __result = new List<MethodInfo>();
-            return false;
+            return true;
         }
 
-        private static bool FixRimatomicsSite(Harmony harmony)
+        private static bool KeepMapPatch(Harmony harmony, Type owner, string patchClass)
         {
             if (icbmStrike == null)
             {
                 icbmStrike = AccessTools.Field(AccessTools.TypeByName("Rimatomics.DubDef"), "ICBMStrike");
                 if (icbmStrike == null)
                 {
-                    Log.Warning("[HSK Fixes 1.7] не найдено Rimatomics.DubDef.ICBMStrike —"
-                        + " класс Harmony_Site_ShouldRemoveMapNow оставлен как есть.");
+                    Log.Warning("[HSK Fixes 1.7] не найдено Rimatomics.DubDef.ICBMStrike — класс "
+                        + patchClass + " оставлен как есть.");
                     return false;
                 }
             }
 
-            MethodInfo target = AccessTools.Method(typeof(Site), nameof(Site.ShouldRemoveMapNow));
+            // Именно DeclaredMethod: у Site и Settlement свои переопределения, и патчить нужно их,
+            // а не базовый MapParent.ShouldRemoveMapNow.
+            MethodInfo target = AccessTools.DeclaredMethod(owner, "ShouldRemoveMapNow");
             if (target == null)
+            {
+                Log.Warning("[HSK Fixes 1.7] не найден " + owner.Name + ".ShouldRemoveMapNow — класс "
+                    + patchClass + " оставлен как есть.");
                 return false;
+            }
 
             harmony.Patch(target, postfix: new HarmonyMethod(typeof(PatchClassFix), nameof(KeepMapWithIcbmStrike)));
-            Report("Rimatomics.Harmony_Site_ShouldRemoveMapNow", "Site.ShouldRemoveMapNow");
+            Report(patchClass, owner.Name + ".ShouldRemoveMapNow");
             return true;
         }
 
@@ -143,10 +178,11 @@ namespace HSKFixes17
         {
             if (dubsPrefix == null)
             {
-                dubsPrefix = AccessTools.Method("DubsMintMenus.Patch_InterfaceTryActivate:Prefix");
+                dubsPrefix = AccessTools.Method("DubsMintMenus.HarmonyPatches+Patch_InterfaceTryActivate:Prefix")
+                    ?? AccessTools.Method("DubsMintMenus.Patch_InterfaceTryActivate:Prefix");
                 if (dubsPrefix == null)
                 {
-                    Log.Warning("[HSK Fixes 1.7] не найден DubsMintMenus.Patch_InterfaceTryActivate.Prefix —"
+                    Log.Warning("[HSK Fixes 1.7] не найден Patch_InterfaceTryActivate.Prefix у Dubs Mint Menus —"
                         + " класс оставлен как есть.");
                     return false;
                 }
