@@ -15,7 +15,8 @@ namespace HSKFixes17
     ///     SKControllerRevive Mod-класс Core SK, который 1.7 не создаёт вовсе;
     ///     SKSettingsRevive   нижний слой того же: если подъём не удался, хотя бы настройки;
     ///     BrokenPatchFix     подмена патчей с несовместимым __instance;
-    ///     PatchClassFix      то же для патчей, объявленных атрибутами и поставленных PatchAll.
+    ///     PatchClassFix      то же для патчей, объявленных атрибутами и поставленных PatchAll;
+    ///     AIRobotWorkTabFix  приоритеты роботов, которые терялись при загрузке сейва.
     ///
     /// Каждый шаг в своём try: падение одного не должно уносить остальные — ровно та ошибка,
     /// из-за которой всё это и понадобилось.
@@ -35,6 +36,7 @@ namespace HSKFixes17
             Run("заплатка настроек Core SK", SKSettingsRevive.Install);
             Run("подмена сломанных патчей", BrokenPatchFix.Install);
             Run("подмена сломанных патч-классов", PatchClassFix.Install);
+            Run("приоритеты роботов", AIRobotWorkTabFix.Install);
         }
 
         private static void Run(string what, Action step)
