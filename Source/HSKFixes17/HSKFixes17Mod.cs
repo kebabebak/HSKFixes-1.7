@@ -17,7 +17,7 @@ namespace HSKFixes17
     ///     BrokenPatchFix     подмена патчей с несовместимым __instance;
     ///     PatchClassFix      то же для патчей, объявленных атрибутами и поставленных PatchAll;
     ///     AIRobotWorkTabFix  приоритеты роботов, которые терялись при загрузке сейва;
-    ///     ResearchTreeZoomFix  зум дерева исследований, из-за которого окно чернело.
+    ///     ResearchTreeFix    прокрутка дерева исследований, стиравшая картинку.
     ///
     /// Каждый шаг в своём try: падение одного не должно уносить остальные — ровно та ошибка,
     /// из-за которой всё это и понадобилось.
@@ -38,7 +38,7 @@ namespace HSKFixes17
             Run("подмена сломанных патчей", BrokenPatchFix.Install);
             Run("подмена сломанных патч-классов", PatchClassFix.Install);
             Run("приоритеты роботов", AIRobotWorkTabFix.Install);
-            Run("масштаб дерева исследований", ResearchTreeZoomFix.Install);
+            Run("дерево исследований", ResearchTreeFix.Install);
         }
 
         private static void Run(string what, Action step)

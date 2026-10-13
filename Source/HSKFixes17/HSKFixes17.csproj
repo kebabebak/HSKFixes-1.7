@@ -23,6 +23,13 @@
       <HintPath>$(RimWorldPath)\RimWorldWin64_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <!-- GUI и GUIStyle живут здесь, а не в CoreModule. На 1.7 Unity нет вовсе, но ссылки на
+         UnityEngine.* перенаправляются в UnityStubs.dll — это прописано в RimWorld.runtimeconfig.json
+         ключом WaylithClr.AssemblyNameRedirects, — так что вызовы разрешаются. -->
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>$(RimWorldPath)\RimWorldWin64_Data\Managed\UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <!-- Harmony: и восстановление настроек, и подмена сломанных патчей ставятся патчами.
          Берём ту, что лежит в игре: свою копию не кладём, иначе в памяти окажется две. -->
     <Reference Include="0Harmony">
