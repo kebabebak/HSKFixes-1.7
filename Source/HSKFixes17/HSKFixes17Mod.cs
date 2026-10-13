@@ -14,7 +14,8 @@ namespace HSKFixes17
     ///     CEPresenceReport   одна строка в лог о том, что стоит на месте Combat Extended;
     ///     SKControllerRevive Mod-класс Core SK, который 1.7 не создаёт вовсе;
     ///     SKSettingsRevive   нижний слой того же: если подъём не удался, хотя бы настройки;
-    ///     BrokenPatchFix     подмена патчей с несовместимым __instance.
+    ///     BrokenPatchFix     подмена патчей с несовместимым __instance;
+    ///     PatchClassFix      то же для патчей, объявленных атрибутами и поставленных PatchAll.
     ///
     /// Каждый шаг в своём try: падение одного не должно уносить остальные — ровно та ошибка,
     /// из-за которой всё это и понадобилось.
@@ -33,6 +34,7 @@ namespace HSKFixes17
             Run("подъём Mod-класса Core SK", SKControllerRevive.ReviveIfDead);
             Run("заплатка настроек Core SK", SKSettingsRevive.Install);
             Run("подмена сломанных патчей", BrokenPatchFix.Install);
+            Run("подмена сломанных патч-классов", PatchClassFix.Install);
         }
 
         private static void Run(string what, Action step)
